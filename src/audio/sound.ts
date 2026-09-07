@@ -5,30 +5,50 @@ class SoundEngine {
   private muted: boolean = false;
   private isBgmPlaying: boolean = false;
   private bgmInterval: any = null;
+  private bgmNoteIdx: number = 0;
 
   constructor() {
-    // AudioContext will be initialized on first user interaction
+    // AudioContext is intentionally created only after a user gesture.
   }
 
-  private initCtx() {
+  private ensureCtx(): AudioContext | null {
     if (!this.ctx) {
       const AudioCtxClass = window.AudioContext || (window as any).webkitAudioContext;
       if (AudioCtxClass) {
         this.ctx = new AudioCtxClass();
       }
     }
-    if (this.ctx && this.ctx.state === 'suspended') {
-      this.ctx.resume();
+    return this.ctx;
+  }
+
+  private async resumeCtx(): Promise<boolean> {
+    const ctx = this.ensureCtx();
+    if (!ctx) return false;
+
+    try {
+      if (ctx.state === 'suspended') {
+        await ctx.resume();
+      }
+      return ctx.state === 'running';
+    } catch (e) {
+      console.warn('AudioContext resume failed', e);
+      return false;
     }
   }
 
   /**
-   * Browsers such as Safari require audible Web Audio to be unlocked by a
-   * user gesture. Call this from the first tap/click/key press on the game.
+   * Safari/iOS requires Web Audio to be resumed from a real user gesture.
+   * We wait until the context is actually running before starting BGM.
    */
-  public unlockAndStart() {
+  public async unlockAndStart() {
     if (this.muted) return;
-    this.initCtx();
+
+    const running = await this.resumeCtx();
+    if (!running) return;
+
+    // Play one very quiet immediate note inside the unlocked context. This
+    // makes Safari commit the audio session before the interval begins.
+    this.playToneNow(261.63, 'sine', 0.08, 0.015, 0.001);
     this.startBgm();
   }
 
@@ -37,7 +57,7 @@ class SoundEngine {
     if (this.muted) {
       this.stopBgm();
     } else {
-      this.unlockAndStart();
+      void this.unlockAndStart();
     }
     return this.muted;
   }
@@ -46,11 +66,14 @@ class SoundEngine {
     return this.muted;
   }
 
-  // Play a simple synthesized frequency envelope
-  private playTone(freq: number, type: OscillatorType, duration: number, startGain = 0.2, endGain = 0.001) {
-    if (this.muted) return;
-    this.initCtx();
-    if (!this.ctx) return;
+  private playToneNow(
+    freq: number,
+    type: OscillatorType,
+    duration: number,
+    startGain = 0.2,
+    endGain = 0.001
+  ) {
+    if (this.muted || !this.ctx || this.ctx.state !== 'running') return;
 
     try {
       const osc = this.ctx.createOscillator();
@@ -64,12 +87,27 @@ class SoundEngine {
 
       osc.connect(gain);
       gain.connect(this.ctx.destination);
-
       osc.start();
       osc.stop(this.ctx.currentTime + duration);
     } catch (e) {
       console.warn('Audio playback error', e);
     }
+  }
+
+  private playTone(freq: number, type: OscillatorType, duration: number, startGain = 0.2, endGain = 0.001) {
+    if (this.muted) return;
+
+    const ctx = this.ensureCtx();
+    if (!ctx) return;
+
+    if (ctx.state !== 'running') {
+      void this.resumeCtx().then((running) => {
+        if (running) this.playToneNow(freq, type, duration, startGain, endGain);
+      });
+      return;
+    }
+
+    this.playToneNow(freq, type, duration, startGain, endGain);
   }
 
   // Sound Effects
@@ -79,23 +117,7 @@ class SoundEngine {
 
   public playScoop() {
     if (this.muted) return;
-    this.initCtx();
-    if (!this.ctx) return;
-
-    // Pitch sweep for scoop splat sound
-    const osc = this.ctx.createOscillator();
-    const gain = this.ctx.createGain();
-    osc.type = 'triangle';
-    osc.frequency.setValueAtTime(180, this.ctx.currentTime);
-    osc.frequency.exponentialRampToValueAtTime(320, this.ctx.currentTime + 0.15);
-
-    gain.gain.setValueAtTime(0.25, this.ctx.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.15);
-
-    osc.connect(gain);
-    gain.connect(this.ctx.destination);
-    osc.start();
-    osc.stop(this.ctx.currentTime + 0.15);
+    this.playTone(240, 'triangle', 0.15, 0.25);
   }
 
   public playDrizzle() {
@@ -104,19 +126,15 @@ class SoundEngine {
 
   public playCashRegister() {
     if (this.muted) return;
-    this.initCtx();
-    if (!this.ctx) return;
-
-    // Two fast bell tones (cha-ching)
-    this.playTone(987.77, 'sine', 0.15, 0.25); // B5
+    this.playTone(987.77, 'sine', 0.15, 0.25);
     setTimeout(() => {
-      this.playTone(1318.51, 'sine', 0.35, 0.3); // E6
+      this.playTone(1318.51, 'sine', 0.35, 0.3);
     }, 80);
   }
 
   public playCustomerHappy() {
     if (this.muted) return;
-    const notes = [523.25, 659.25, 783.99, 1046.50]; // C5, E5, G5, C6
+    const notes = [523.25, 659.25, 783.99, 1046.50];
     notes.forEach((freq, idx) => {
       setTimeout(() => this.playTone(freq, 'triangle', 0.15, 0.2), idx * 70);
     });
@@ -132,18 +150,20 @@ class SoundEngine {
 
   // Cozy Loop BGM Generator
   public startBgm() {
-    if (this.isBgmPlaying || this.muted) return;
+    if (this.isBgmPlaying || this.muted || !this.ctx || this.ctx.state !== 'running') return;
+
     this.isBgmPlaying = true;
+    const notes = [261.63, 329.63, 392.0, 523.25, 392.0, 329.63, 440.0, 392.0];
 
-    // Simple pentatonic melody sequence
-    const notes = [261.63, 329.63, 392.00, 523.25, 392.00, 329.63, 440.00, 392.00];
-    let noteIdx = 0;
-
-    this.bgmInterval = setInterval(() => {
+    const playNext = () => {
       if (!this.isBgmPlaying || this.muted) return;
-      this.playTone(notes[noteIdx], 'sine', 0.4, 0.03, 0.001);
-      noteIdx = (noteIdx + 1) % notes.length;
-    }, 450);
+      this.playToneNow(notes[this.bgmNoteIdx], 'sine', 0.4, 0.03, 0.001);
+      this.bgmNoteIdx = (this.bgmNoteIdx + 1) % notes.length;
+    };
+
+    // Start immediately rather than waiting for the first interval tick.
+    playNext();
+    this.bgmInterval = setInterval(playNext, 450);
   }
 
   public stopBgm() {
