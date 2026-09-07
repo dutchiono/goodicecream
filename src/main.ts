@@ -38,6 +38,17 @@ window.addEventListener('beforeinstallprompt', (e) => {
   }
 });
 
+// iPad/iPhone/Safari (and most browsers) block audible autoplay until the
+// visitor interacts with the page. Start the soundtrack on the very first
+// interaction instead of waiting for a particular button such as Settings.
+const unlockAudio = () => {
+  sound.unlockAndStart();
+};
+
+document.addEventListener('pointerdown', unlockAudio, { once: true, capture: true });
+document.addEventListener('touchstart', unlockAudio, { once: true, capture: true, passive: true });
+document.addEventListener('keydown', unlockAudio, { once: true, capture: true });
+
 // Sound Toggle
 const soundBtn = document.getElementById('btn-sound');
 soundBtn?.addEventListener('click', () => {
@@ -201,5 +212,4 @@ function showShopView() {
 }
 
 // Initialize Application on Title Screen
-sound.startBgm();
 showTitleView();
