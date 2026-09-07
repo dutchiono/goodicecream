@@ -12,37 +12,29 @@ import { renderShopView } from './ui/shopView';
 
 const container = document.getElementById('game-container')!;
 
-// PWA Service Worker Registration
+// Development mode: disable old PWA/service-worker caching so every deploy
+// reaches the iPad immediately while we are iterating on the game.
 if ('serviceWorker' in navigator) {
-  window.addEventListener('load', () => {
-    navigator.serviceWorker.register('/sw.js').catch(err => {
-      console.log('PWA ServiceWorker registration skipped/dev:', err);
-    });
+  window.addEventListener('load', async () => {
+    try {
+      const registrations = await navigator.serviceWorker.getRegistrations();
+      await Promise.all(registrations.map(registration => registration.unregister()));
+
+      if ('caches' in window) {
+        const cacheNames = await caches.keys();
+        await Promise.all(cacheNames.map(name => caches.delete(name)));
+      }
+    } catch (err) {
+      console.log('Service worker cleanup skipped:', err);
+    }
   });
 }
-
-// Handle PWA Install Prompt
-let deferredPrompt: any = null;
-window.addEventListener('beforeinstallprompt', (e) => {
-  e.preventDefault();
-  deferredPrompt = e;
-  const installBtn = document.getElementById('btn-pwa-install');
-  if (installBtn) {
-    installBtn.classList.remove('hidden');
-    installBtn.addEventListener('click', () => {
-      deferredPrompt.prompt();
-      deferredPrompt.userChoice.then(() => {
-        installBtn.classList.add('hidden');
-      });
-    });
-  }
-});
 
 // iPad/iPhone/Safari (and most browsers) block audible autoplay until the
 // visitor interacts with the page. Start the soundtrack on the very first
 // interaction instead of waiting for a particular button such as Settings.
 const unlockAudio = () => {
-  sound.unlockAndStart();
+  void sound.unlockAndStart();
 };
 
 document.addEventListener('pointerdown', unlockAudio, { once: true, capture: true });
@@ -97,12 +89,11 @@ function showTitleView() {
   updateHUD();
   renderTitleView(
     container,
-    () => showNewsView(), // New Game -> Morning News
-    () => loadSavedGameFlow() // Load Game -> Resume Saved Day/Counter
+    () => showNewsView(),
+    () => loadSavedGameFlow()
   );
 }
 
-// Resume from loaded save
 function loadSavedGameFlow() {
   gameState.loadSave();
   if (gameState.currentCustomer) {
@@ -115,7 +106,6 @@ function loadSavedGameFlow() {
   }
 }
 
-// 1. Show Morning News
 function showNewsView() {
   gameState.currentView = 'news';
   updateHUD();
@@ -124,7 +114,6 @@ function showNewsView() {
   });
 }
 
-// 2. Start New Day Queue
 function startNewDay() {
   gameState.customerQueue = generateDailyCustomers(4);
   gameState.currentCustomer = gameState.customerQueue.shift() || null;
@@ -133,33 +122,29 @@ function startNewDay() {
   showCounterView();
 }
 
-// 3. Show Counter View
 function showCounterView() {
   gameState.currentView = 'counter';
   updateHUD();
   renderCounterView(
     container,
-    () => showPrepView(), // Go to Prep
-    () => showRegisterView(), // Close Shop
-    () => handleSaveAndQuit() // Save & Quit
+    () => showPrepView(),
+    () => showRegisterView(),
+    () => handleSaveAndQuit()
   );
 }
 
-// 4. Show Kitchen Prep View
 function showPrepView() {
   gameState.currentView = 'prep';
   updateHUD();
   renderPrepView(
     container,
-    () => showCounterView(), // Back to Counter
-    (result) => handleServeDish(result), // Serve finished
-    () => handleSaveAndQuit() // Save & Quit
+    () => showCounterView(),
+    (result) => handleServeDish(result),
+    () => handleSaveAndQuit()
   );
 }
 
-// 5. Handle Serving Dish & Show Feedback
 function handleServeDish(result: any) {
-  // Show Floating Review Popup
   const stars = '⭐'.repeat(result.rating);
   const popup = document.createElement('div');
   popup.className = 'review-popup';
@@ -179,7 +164,6 @@ function handleServeDish(result: any) {
 
   setTimeout(() => {
     popup.remove();
-    // Advance customer queue
     gameState.currentCustomer = gameState.customerQueue.shift() || null;
     gameState.customerPatience = 100;
     gameState.resetPrep();
@@ -187,7 +171,6 @@ function handleServeDish(result: any) {
   }, 2800);
 }
 
-// 6. Show Register / End-of-Day View
 function showRegisterView() {
   gameState.currentView = 'register';
   const summary = gameState.endDay();
@@ -201,15 +184,12 @@ function showRegisterView() {
   );
 }
 
-// 7. Show Shop Upgrades View
 function showShopView() {
   gameState.currentView = 'shop';
   updateHUD();
   renderShopView(container, () => {
-    // Back to Register View
     showRegisterView();
   });
 }
 
-// Initialize Application on Title Screen
 showTitleView();
