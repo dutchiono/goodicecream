@@ -5,7 +5,7 @@ class SoundEngine {
   private muted: boolean = false;
   private isBgmPlaying: boolean = false;
   private bgmInterval: any = null;
-  private bgmNoteIdx: number = 0;
+  private bgmStep: number = 0;
 
   constructor() {
     // AudioContext is intentionally created only after a user gesture.
@@ -46,9 +46,8 @@ class SoundEngine {
     const running = await this.resumeCtx();
     if (!running) return;
 
-    // Play one very quiet immediate note inside the unlocked context. This
-    // makes Safari commit the audio session before the interval begins.
-    this.playToneNow(261.63, 'sine', 0.08, 0.015, 0.001);
+    // Very quiet immediate tone to lock in the Safari audio session.
+    this.playToneNow(261.63, 'sine', 0.06, 0.006, 0.001);
     this.startBgm();
   }
 
@@ -71,24 +70,26 @@ class SoundEngine {
     type: OscillatorType,
     duration: number,
     startGain = 0.2,
-    endGain = 0.001
+    endGain = 0.001,
+    delay = 0
   ) {
     if (this.muted || !this.ctx || this.ctx.state !== 'running') return;
 
     try {
+      const now = this.ctx.currentTime + delay;
       const osc = this.ctx.createOscillator();
       const gain = this.ctx.createGain();
 
       osc.type = type;
-      osc.frequency.setValueAtTime(freq, this.ctx.currentTime);
+      osc.frequency.setValueAtTime(freq, now);
 
-      gain.gain.setValueAtTime(startGain, this.ctx.currentTime);
-      gain.gain.exponentialRampToValueAtTime(endGain, this.ctx.currentTime + duration);
+      gain.gain.setValueAtTime(Math.max(startGain, 0.0001), now);
+      gain.gain.exponentialRampToValueAtTime(Math.max(endGain, 0.0001), now + duration);
 
       osc.connect(gain);
       gain.connect(this.ctx.destination);
-      osc.start();
-      osc.stop(this.ctx.currentTime + duration);
+      osc.start(now);
+      osc.stop(now + duration);
     } catch (e) {
       console.warn('Audio playback error', e);
     }
@@ -108,6 +109,24 @@ class SoundEngine {
     }
 
     this.playToneNow(freq, type, duration, startGain, endGain);
+  }
+
+  private playJazzChord(notes: number[], duration = 1.9, gain = 0.016) {
+    // Triangle + sine blend gives a softer electric-piano/lounge character.
+    notes.forEach((freq, i) => {
+      this.playToneNow(freq, 'triangle', duration, gain, 0.001, i * 0.025);
+      this.playToneNow(freq * 2, 'sine', duration * 0.8, gain * 0.22, 0.001, i * 0.025);
+    });
+  }
+
+  private playBass(freq: number) {
+    this.playToneNow(freq, 'sine', 0.85, 0.024, 0.001);
+  }
+
+  private playBrush() {
+    // A very soft, short high tone suggests a brushed cymbal tick without
+    // making the soundtrack feel percussive or arcade-like.
+    this.playToneNow(1800, 'triangle', 0.045, 0.004, 0.001);
   }
 
   // Sound Effects
@@ -134,7 +153,7 @@ class SoundEngine {
 
   public playCustomerHappy() {
     if (this.muted) return;
-    const notes = [523.25, 659.25, 783.99, 1046.50];
+    const notes = [523.25, 659.25, 783.99, 1046.5];
     notes.forEach((freq, idx) => {
       setTimeout(() => this.playTone(freq, 'triangle', 0.15, 0.2), idx * 70);
     });
@@ -148,22 +167,37 @@ class SoundEngine {
     });
   }
 
-  // Cozy Loop BGM Generator
+  // Cozy coffee-shop jazz loop.
   public startBgm() {
     if (this.isBgmPlaying || this.muted || !this.ctx || this.ctx.state !== 'running') return;
 
     this.isBgmPlaying = true;
-    const notes = [261.63, 329.63, 392.0, 523.25, 392.0, 329.63, 440.0, 392.0];
 
-    const playNext = () => {
+    // Cmaj7 -> A7 -> Dm7 -> G7, a classic warm jazz turnaround.
+    const chords = [
+      { notes: [261.63, 329.63, 392.0, 493.88], bass: 130.81 }, // Cmaj7
+      { notes: [277.18, 329.63, 415.3, 493.88], bass: 110.0 },  // A7(b9-ish voicing)
+      { notes: [293.66, 349.23, 440.0, 523.25], bass: 146.83 }, // Dm7
+      { notes: [293.66, 349.23, 392.0, 493.88], bass: 98.0 }    // G7
+    ];
+
+    const playBar = () => {
       if (!this.isBgmPlaying || this.muted) return;
-      this.playToneNow(notes[this.bgmNoteIdx], 'sine', 0.4, 0.03, 0.001);
-      this.bgmNoteIdx = (this.bgmNoteIdx + 1) % notes.length;
+
+      const chord = chords[this.bgmStep % chords.length];
+      this.playJazzChord(chord.notes);
+      this.playBass(chord.bass);
+
+      // Light swing-like brush ticks inside the bar.
+      setTimeout(() => this.playBrush(), 420);
+      setTimeout(() => this.playBrush(), 980);
+      setTimeout(() => this.playBrush(), 1420);
+
+      this.bgmStep = (this.bgmStep + 1) % chords.length;
     };
 
-    // Start immediately rather than waiting for the first interval tick.
-    playNext();
-    this.bgmInterval = setInterval(playNext, 450);
+    playBar();
+    this.bgmInterval = setInterval(playBar, 2000);
   }
 
   public stopBgm() {
