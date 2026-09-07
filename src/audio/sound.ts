@@ -22,12 +22,22 @@ class SoundEngine {
     }
   }
 
+  /**
+   * Browsers such as Safari require audible Web Audio to be unlocked by a
+   * user gesture. Call this from the first tap/click/key press on the game.
+   */
+  public unlockAndStart() {
+    if (this.muted) return;
+    this.initCtx();
+    this.startBgm();
+  }
+
   public toggleMute(): boolean {
     this.muted = !this.muted;
     if (this.muted) {
       this.stopBgm();
     } else {
-      this.startBgm();
+      this.unlockAndStart();
     }
     return this.muted;
   }
