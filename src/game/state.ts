@@ -1,3 +1,6 @@
+import { ensureCustomerAppearance } from './characters';
+import type { CharacterAppearance } from './characters';
+
 export type VesselType = 'cone' | 'bowl' | 'sundae';
 export type FlavorType = 'vanilla' | 'chocolate' | 'strawberry' | 'mint' | 'cookie_dough' | 'mango';
 export type SyrupType = 'hot_fudge' | 'caramel' | 'strawberry_sauce';
@@ -16,6 +19,7 @@ export interface CustomerOrder {
   id: string;
   customerName: string;
   avatar: string;
+  appearance?: CharacterAppearance;
   dialogue: string;
   hint: string;
   targetVessel: VesselType;
@@ -39,7 +43,7 @@ export interface DaySummary {
 class GameState {
   public day: number = 1;
   public cash: number = 50.00;
-  public currentView: 'title' | 'news' | 'counter' | 'prep' | 'register' | 'shop' = 'title';
+  public currentView: 'title' | 'news' | 'counter' | 'prep' | 'register' | 'shop' | 'characters' = 'title';
 
   // Customer queue for current day
   public customerQueue: CustomerOrder[] = [];
@@ -321,7 +325,9 @@ class GameState {
         if (data.cash !== undefined) this.cash = data.cash;
         if (data.unlocked) this.unlocked = { ...this.unlocked, ...data.unlocked };
         if (data.customerQueue) this.customerQueue = data.customerQueue;
-        if (data.currentCustomer) this.currentCustomer = data.currentCustomer;
+        this.currentCustomer = data.currentCustomer ?? null;
+        this.customerQueue.forEach(ensureCustomerAppearance);
+        if (this.currentCustomer) ensureCustomerAppearance(this.currentCustomer);
         if (data.customerPatience !== undefined) this.customerPatience = data.customerPatience;
         if (data.dailyStats) this.dailyStats = { ...this.dailyStats, ...data.dailyStats };
         return true;

@@ -1,5 +1,9 @@
 import { gameState } from '../game/state';
 import { sound } from '../audio/sound';
+import { ensureCustomerAppearance } from '../game/characters';
+import { mountCharacterSprite, type SpriteMood } from './characterSprite';
+
+let patienceTimer: ReturnType<typeof setInterval> | undefined;
 
 export function renderCounterView(
   container: HTMLElement,
@@ -7,6 +11,7 @@ export function renderCounterView(
   onEndDay: () => void,
   onSaveAndQuit: () => void
 ) {
+  if (patienceTimer !== undefined) clearInterval(patienceTimer);
   const customer = gameState.currentCustomer;
 
   if (!customer) {
@@ -52,9 +57,13 @@ export function renderCounterView(
     return;
   }
 
+  const appearance = ensureCustomerAppearance(customer);
+  let reaction: SpriteMood = 'neutral';
+  let reactingUntil = 0;
+
   // Active customer layout
   container.innerHTML = `
-    <div class="counter-layout game-view">
+    <div class="counter-layout game-view sprite-counter">
       <!-- Ice Cream Parlor Background Elements -->
       <div class="parlor-wall"></div>
       <div class="parlor-wainscoting"></div>
@@ -118,7 +127,7 @@ export function renderCounterView(
           <div class="patience-container" title="Customer Patience">
             <div id="patience-bar" class="patience-bar"></div>
           </div>
-          <div id="customer-avatar" class="customer-avatar bounce" style="background-image: url('${getCustomerAvatarData(customer.avatar)}');"></div>
+          <canvas id="customer-avatar" class="customer-avatar" role="img" aria-label="${customer.customerName}"></canvas>
         </div>
 
         <div class="dialogue-bubble">
@@ -147,6 +156,16 @@ export function renderCounterView(
     </div>
   `;
 
+  const canvas = container.querySelector<HTMLCanvasElement>('#customer-avatar')!;
+  mountCharacterSprite(canvas, () => ({
+    appearance,
+    mood: performance.now() < reactingUntil ? reaction : gameState.customerPatience < 35 ? 'unhappy' : 'neutral',
+  }));
+  canvas.addEventListener('click', () => {
+    reaction = 'happy';
+    reactingUntil = performance.now() + 1400;
+  });
+
   // Patience decay timer
   const patienceBar = document.getElementById('patience-bar');
   const patienceInterval = setInterval(() => {
@@ -164,9 +183,12 @@ export function renderCounterView(
       }
     }
   }, 1000);
+  patienceTimer = patienceInterval;
 
   // Event Listeners
   document.getElementById('btn-what')?.addEventListener('click', () => {
+    reaction = 'talking';
+    reactingUntil = performance.now() + 2000;
     sound.playClick();
     gameState.customerPatience = Math.max(15, gameState.customerPatience - 10);
     const dialogueEl = document.getElementById('dialogue-text');
@@ -183,19 +205,4 @@ export function renderCounterView(
   document.getElementById('btn-counter-save-quit')?.addEventListener('click', () => {
     onSaveAndQuit();
   });
-}
-
-// Returns asset paths for high-quality Good Pizza, Great Pizza styled customer avatar images
-function getCustomerAvatarData(type: string): string {
-  const avatarMap: Record<string, string> = {
-    boy: '/assets/customers/boy.png',
-    girl: '/assets/customers/girl.png',
-    grandpa: '/assets/customers/grandpa.png',
-    hipster: '/assets/customers/hipster.png',
-    chef: '/assets/customers/chef.png',
-    kid: '/assets/customers/kid.png',
-    sailor: '/assets/customers/sailor.png'
-  };
-
-  return avatarMap[type] || avatarMap.boy;
 }

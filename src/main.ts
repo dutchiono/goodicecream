@@ -1,4 +1,5 @@
 import './style.css';
+import './ui/characters.css';
 import { gameState } from './game/state';
 import { generateDailyCustomers } from './game/customers';
 import { sound } from './audio/sound';
@@ -9,6 +10,8 @@ import { renderCounterView } from './ui/counterView';
 import { renderPrepView } from './ui/prepView';
 import { renderRegisterView } from './ui/registerView';
 import { renderShopView } from './ui/shopView';
+import { renderCharacterStudio } from './ui/characterStudio';
+import { CHARACTER_DEFAULTS } from './game/characters';
 
 const container = document.getElementById('game-container')!;
 
@@ -66,6 +69,43 @@ document.getElementById('dev-skip-day')?.addEventListener('click', () => {
   showRegisterView();
 });
 
+{
+  const studioButton = document.createElement('button');
+  studioButton.className = 'dev-link';
+  studioButton.id = 'dev-characters';
+  studioButton.textContent = 'Characters';
+  studioButton.addEventListener('click', showCharacterStudio);
+  document.getElementById('dev-bar')?.append(studioButton);
+}
+
+function showCharacterStudio() {
+  if (gameState.currentView === 'characters') return;
+  const previousView = gameState.currentView;
+  gameState.currentView = 'characters';
+  updateHUD();
+  renderCharacterStudio(container, () => {
+    if (previousView === 'prep' && gameState.currentCustomer) showPrepView();
+    else if (previousView === 'title') showTitleView();
+    else if (previousView === 'news') showNewsView();
+    else if (gameState.currentCustomer) showCounterView();
+    else showTitleView();
+  }, appearance => {
+    if (!gameState.currentCustomer) {
+      const customers = generateDailyCustomers(4);
+      const index = customers.findIndex(customer => customer.avatar === appearance.base);
+      gameState.currentCustomer = customers.splice(index, 1)[0];
+      gameState.customerQueue = customers;
+      gameState.customerPatience = 100;
+      gameState.resetPrep();
+    }
+    const customer = gameState.currentCustomer;
+    customer.appearance = appearance;
+    customer.avatar = appearance.base;
+    customer.customerName = CHARACTER_DEFAULTS[appearance.base].name;
+    showCounterView();
+  });
+}
+
 // HUD Updater
 function updateHUD() {
   const dayEl = document.getElementById('hud-day');
@@ -75,7 +115,7 @@ function updateHUD() {
 
   const saveBtn = document.getElementById('btn-save-quit');
   if (saveBtn) {
-    if (gameState.currentView === 'title') {
+    if (gameState.currentView === 'title' || gameState.currentView === 'characters') {
       saveBtn.style.display = 'none';
     } else {
       saveBtn.style.display = 'inline-flex';
@@ -192,4 +232,5 @@ function showShopView() {
   });
 }
 
-showTitleView();
+if (new URLSearchParams(window.location.search).has('characters')) showCharacterStudio();
+else showTitleView();

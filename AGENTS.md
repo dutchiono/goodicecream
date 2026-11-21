@@ -9,6 +9,7 @@ This is a Vite and TypeScript browser game.
 - Install dependencies: `npm install`
 - Run locally: `npm run dev`
 - Validate changes: `npm run build`
+- Check character appearance and legacy-save migration: `npm run test:characters` (Node 22.16+)
 - Preview production build: `npm run preview`
 
 ## Guidance
